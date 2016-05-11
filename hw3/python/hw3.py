@@ -30,7 +30,7 @@ def plotHist(title, bins, histogram, fig, pos):
 
 
 def searchNearest(array, n):
-    """Resutn index of nearest element to given value in an array."""
+    """Return the index of nearest element to given value in an array."""
     idx = (np.abs(array - n)).argmin()
     return idx
 

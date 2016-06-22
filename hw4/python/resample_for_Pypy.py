@@ -11,18 +11,11 @@ from trans8param_for_Pypy import get8params
 
 
 def getValue(img, x, y):
-    """Bilinear interpolation."""
-    # Get coordinates of nearest four points
-    x0 = np.floor(x)
-    x1 = x0 + 1
-    y0 = np.floor(y)
-    y1 = y0 + 1
-
-    # Ensure the coordinates of four points are in the right image extent
-    x0 = int(np.clip(x0, 0, img.shape[1] - 1))
-    x1 = int(np.clip(x1, 0, img.shape[1] - 1))
-    y0 = int(np.clip(y0, 0, img.shape[0] - 1))
-    y1 = int(np.clip(y1, 0, img.shape[0] - 1))
+    """Resample from input image, using bilinear interpolation."""
+    # Get coordinates of nearest four points as well as ensuring the
+    # coordinates of four points are in the right image extent
+    x0, x1 = map(int, np.clip([x, x + 1], 0, img.shape[1] - 1))
+    y0, y1 = map(int, np.clip([y, y + 1], 0, img.shape[0] - 1))
 
     # Get intensity of nearest four points
     Ia = img[y0, x0]  # Upper left corner
@@ -73,14 +66,14 @@ def img2array(imgObj):
     numBand = len(imgObj.getbands())
     if numBand == 1:        # For panchromatic image
         imgArr = np.zeros((height, width))
-        for row in range(height):
-            for col in range(width):
-                imgArr[row, col] = imgObj.getpixel((col, row))
+        gridRow, gridCol = np.meshgrid(range(height), range(width))
+        for row, col in zip(gridRow.ravel(), gridCol.ravel()):
+            imgArr[row, col] = imgObj.getpixel((col, row))
     else:                   # For multi-spectral image
         imgArr = np.zeros((height, width, numBand))
-        for row in range(height):
-            for col in range(width):
-                imgArr[row, col, :] = imgObj.getpixel((col, row))
+        gridRow, gridCol = np.meshgrid(range(height), range(width))
+        for row, col in zip(gridRow.ravel(), gridCol.ravel()):
+            imgArr[row, col, :] = imgObj.getpixel((col, row))
 
     return imgArr
 
@@ -102,6 +95,7 @@ def main():
     width, height = imgSrc.size
     numBand = len(imgSrc.getbands())
     img = img2array(imgSrc)
+    del imgSrc
 
     CR = controlPts['C'], height - controlPts['R']
     EN = controlPts['E'], controlPts['N']
@@ -118,7 +112,7 @@ def main():
     rangeX = np.linspace(xmin, xmax, num=width) - shiftEN[0]
     rangeY = np.linspace(ymax, ymin, num=height) - shiftEN[1]
 
-    a, b, c, d, e, f, g, h = np.array(param).flatten()
+    a, b, c, d, e, f, g, h = map(lambda x: x[0, 0], param)
 
     # Generate new image sampling
     resImg = np.zeros((height * width, numBand))
@@ -127,13 +121,13 @@ def main():
     pxNum = height * width
     sys.stdout.write("Processing... %3d%%" % 0)
 
-    for y in rangeY:
-        for x in rangeX:
-            X = (a * x + b * y + c) / (g * x + h * y + 1) + shiftCR[0]
-            Y = -((d * x + e * y + f) / (g * x + h * y + 1) + shiftCR[1])
-            val = getValue(img, X, Y)
-            resImg[idx, :] = val
-            idx += 1
+    x, y = np.meshgrid(rangeX, rangeY)
+    X = (a * x + b * y + c) / (g * x + h * y + 1) + shiftCR[0]
+    Y = -((d * x + e * y + f) / (g * x + h * y + 1) + shiftCR[1])
+
+    for x, y in zip(X.ravel(), Y.ravel()):
+        resImg[idx, :] = getValue(img, x, y)
+        idx += 1
 
         # Update the percentage of completion
         if curValue < int(100.0 * idx / pxNum):

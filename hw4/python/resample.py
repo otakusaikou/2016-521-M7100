@@ -7,22 +7,29 @@ from scipy.misc import imread
 from scipy.misc import imsave
 from sympy import solve
 from sympy import symbols
-import sys
 from trans8param import get8params
 
 
-def getValue(img, x, y):
+def bilinearInterp(img, x, y):
     """Resample from input image, using bilinear interpolation."""
-    # Get coordinates of nearest four points as well as ensuring the
-    # coordinates of four points are in the right image extent
-    x0, x1 = map(int, np.clip([x, x + 1], 0, img.shape[1] - 1))
-    y0, y1 = map(int, np.clip([y, y + 1], 0, img.shape[0] - 1))
+    # Generate image array for the interpolated values
+    newImg = np.zeros(img.shape)
+
+    # Filter out the points outside the image extent
+    mask = (x >= 0) & ((x.astype(int) + 1) <= (img.shape[1] - 1)) & \
+        (y >= 0) & ((y.astype(int) + 1) <= (img.shape[0] - 1))
+    x = x[mask]
+    y = y[mask]
+
+    # Get coordinates of nearest four points
+    x0, y0 = x.astype(int), y.astype(int)
+    x1, y1 = x0 + 1, y0 + 1
 
     # Get intensity of nearest four points
-    Ia = img[y0, x0]  # Upper left corner
-    Ib = img[y1, x0]  # Lower left corner
-    Ic = img[y0, x1]  # Upper right corner
-    Id = img[y1, x1]  # Lower right corner
+    Ia = img[y0, x0]    # Upper left corner
+    Ib = img[y1, x0]    # Lower left corner
+    Ic = img[y0, x1]    # Upper right corner
+    Id = img[y1, x1]    # Lower right corner
 
     # Compute the weight of four points
     wa = (x1-x) * (y1-y)
@@ -30,7 +37,14 @@ def getValue(img, x, y):
     wc = (x-x0) * (y1-y)
     wd = (x-x0) * (y-y0)
 
-    return wa*Ia + wb*Ib + wc*Ic + wd*Id
+    # For multi-spectral image
+    if len(img.shape) > 2:
+        wa, wb, wc, wd = map(lambda e: e.reshape(-1, 1), [wa, wb, wc, wd])
+
+    # Update the image
+    newImg[mask] = (wa*Ia + wb*Ib + wc*Ic + wd*Id)
+
+    return newImg
 
 
 def getBound(width, height, param, shiftxy=(0, 0), shiftXY=(0, 0)):
@@ -63,10 +77,10 @@ def getBound(width, height, param, shiftxy=(0, 0), shiftXY=(0, 0)):
 
 def main():
     # Define file names
-    controlPtFileName = 'cp_MS.txt'
-    imageName = '../img/MS.tif'
-    # controlPtFileName = 'cp_Pan.txt'
-    # imageName = '../img/Pan.tif'
+    # controlPtFileName = 'cp_MS.txt'
+    # imageName = '../img/MS.tif'
+    controlPtFileName = 'cp_Pan.txt'
+    imageName = '../img/Pan.tif'
 
     # Read control point information from file
     controlPts = np.genfromtxt(controlPtFileName, dtype=[
@@ -75,11 +89,7 @@ def main():
 
     # Read image information
     img = imread(imageName)
-    if len(img.shape) == 3:     # For multi-spectral image
-        height, width, numBand = img.shape
-    else:                       # For panchromatic image
-        height, width = img.shape
-        numBand = 1
+    height, width = img.shape[:2]
 
     CR = controlPts['C'], height - controlPts['R']
     EN = controlPts['E'], controlPts['N']
@@ -99,33 +109,12 @@ def main():
     a, b, c, d, e, f, g, h = map(lambda x: x[0, 0], param)
 
     # Generate new image sampling
-    resImg = np.zeros((height * width, numBand))
-    idx = 0
-    curValue = 0    # Current percentage of completion
-    pxNum = height * width
-    sys.stdout.write("Processing... %3d%%" % 0)
-
     x, y = np.meshgrid(rangeX, rangeY)
     X = (a * x + b * y + c) / (g * x + h * y + 1) + shiftCR[0]
     Y = -((d * x + e * y + f) / (g * x + h * y + 1) + shiftCR[1])
-
-    for x, y in zip(X.ravel(), Y.ravel()):
-        resImg[idx, :] = getValue(img, x, y)
-        idx += 1
-
-        # Update the percentage of completion
-        if curValue < int(100.0 * idx / pxNum):
-            curValue = int(100.0 * idx / pxNum)
-            sys.stdout.write("\b" * 4)
-            sys.stdout.write("%3d%%" % curValue)
-            sys.stdout.flush()
-    sys.stdout.write("\n")
+    resImg = bilinearInterp(img, X, Y)
 
     # Save result
-    if numBand == 1:
-        resImg = resImg.reshape(height, width)
-    else:
-        resImg = resImg.reshape(height, width, numBand)
     fname, ext = os.path.splitext(imageName)
     imsave("../img/" + fname + "_modified" + ext, resImg.astype(np.uint8))
 

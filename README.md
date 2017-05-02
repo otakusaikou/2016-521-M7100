@@ -1,13 +1,13 @@
 Remote Sensing Homework Assignments
 ==========
 
-##Description
+## Description
 Homework assignments and final project for NTU's [521 M7100](https://goo.gl/6zje0w) 2016.  
 Written with Python code.
 
-##Requirements
+## Requirements
 
-###Python
+### Python
 This project require [Python v2.7.X](https://www.python.org) and the following modules to be installed.
 
 -[Matplotlib](http://matplotlib.org)  
